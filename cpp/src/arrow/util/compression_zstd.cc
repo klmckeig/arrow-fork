@@ -28,6 +28,8 @@
 #include "arrow/util/logging.h"
 #include "arrow/util/macros.h"
 
+#include "qatseqprod.h"
+
 using std::size_t;
 
 namespace arrow {
@@ -207,12 +209,38 @@ class ZSTDCodec : public Codec {
 
   Result<int64_t> Compress(int64_t input_len, const uint8_t* input,
                            int64_t output_buffer_len, uint8_t* output_buffer) override {
-    size_t ret = ZSTD_compress(output_buffer, static_cast<size_t>(output_buffer_len),
-                               input, static_cast<size_t>(input_len), compression_level_);
-    if (ZSTD_isError(ret)) {
-      return ZSTDError(ret, "ZSTD compression failed: ");
+     ZSTD_CCtx *const zc = ZSTD_createCCtx();
+    QZSTD_startQatDevice();
+    void *sequenceProducerState = QZSTD_createSeqProdState();
+
+    /* register qatSequenceProducer */
+    ZSTD_registerSequenceProducer(
+        zc,
+        sequenceProducerState,
+        qatSequenceProducer
+    );
+
+    size_t res = ZSTD_CCtx_setParameter(zc, ZSTD_c_enableSeqProducerFallback, 1);
+
+    if ((int)res <= 0) {
+        printf("Failed to set fallback\n");
+        goto exit;
     }
-    return static_cast<int64_t>(ret);
+
+    /* compress */
+    size_t cSize = ZSTD_compress2(zc, output_buffer, output_buffer_len, input, input_len);
+    if ((int)cSize <= 0) {
+        printf("Compress failed\n");
+        goto exit;
+    }
+
+    // size_t ret = ZSTD_compress(output_buffer, static_cast<size_t>(output_buffer_len),
+    //                            input, static_cast<size_t>(input_len), compression_level_);
+    exit:
+    ZSTD_freeCCtx(zc);
+    QZSTD_freeSeqProdState(sequenceProducerState);
+    QZSTD_stopQatDevice();
+    return static_cast<int64_t>(cSize);
   }
 
   Result<std::shared_ptr<Compressor>> MakeCompressor() override {

@@ -208,6 +208,8 @@ macro(build_dependency DEPENDENCY_NAME)
     build_zlib()
   elseif("${DEPENDENCY_NAME}" STREQUAL "zstd")
     build_zstd()
+  elseif("${DEPENDENCY_NAME}" STREQUAL "qat_zstd_plugin")
+    build_qat_zstd_plugin()
   else()
     message(FATAL_ERROR "Unknown thirdparty dependency to build: ${DEPENDENCY_NAME}")
   endif()
@@ -2602,6 +2604,57 @@ if(ARROW_WITH_ZSTD)
   endif()
 endif()
 
+macro(build_qat_zstd_plugin)
+  message(STATUS "Building QAT ZSTD Plugin from source")
+  set(QAT_ZSTD_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/qat_zstd_ep-install")
+
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -lqat_s -lusdm_drv_s")
+  set(QATZSTD_CMAKE_ARGS
+      ${EP_COMMON_CMAKE_ARGS}
+      "-DCMAKE_INSTALL_PREFIX=${QAT_ZSTD_PREFIX}"
+      -DCMAKE_INSTALL_LIBDIR=${QAT_ZSTD_PREFIX}/lib
+      -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
+      -DENABLE_USDM_DRV=1 
+      -DZSTDLIB=${ARROW_QAT_ZSTD_LIBZSTD})
+
+  set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/lib/libqatseqprod.a")
+
+  externalproject_add(qat_zstd_ep
+                      ${EP_COMMON_OPTIONS}
+                      CMAKE_ARGS ${QATZSTD_CMAKE_ARGS}
+                      SOURCE_SUBDIR "build/cmake"
+                      INSTALL_DIR ${QAT_ZSTD_PREFIX}
+                      URL ${QAT_ZSTD_SOURCE_URL}
+                      BUILD_BYPRODUCTS "${QAT_ZSTD_STATIC_LIB}")
+
+  file(MAKE_DIRECTORY "${QAT_ZSTD_PREFIX}/include")
+
+  add_library(qatseqprod::qatseqprod STATIC IMPORTED)
+  set(QAT_ZSTD_INCLUDE_DIRS "${QAT_ZSTD_PREFIX}/include")
+  set_target_properties(qatseqprod::qatseqprod
+                        PROPERTIES IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB}
+                                   INTERFACE_INCLUDE_DIRECTORIES ${QAT_ZSTD_INCLUDE_DIRS})
+
+  add_dependencies(toolchain qat_zstd_ep)
+  add_dependencies(qatseqprod::qatseqprod qat_zstd_ep)
+
+  list(APPEND ARROW_BUNDLED_STATIC_LIBS qatseqprod::qatseqprod)
+
+endmacro()
+
+if(ARROW_WITH_QAT)
+  resolve_dependency(qat_zstd_plugin
+                     REQUIRED_VERSION
+                     0.0.1)
+
+  set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/lib/libqatseqprod.a")
+  add_library(qatseqprod::qatseqprod STATIC IMPORTED)
+  set(QAT_ZSTD_INCLUDE_DIRS "/home/yangyang/QAT-ZSTD-Plugin/src")
+  set_target_properties(qatseqprod::qatseqprod
+                        PROPERTIES INTERFACE_LINK_LIBRARIES Threads::Threads
+                                   IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB})
+  set(ARROW_QAT_ZSTD_LIBZSTD qatseqprod::qatseqprod)
+endif()
 # ----------------------------------------------------------------------
 # RE2 (required for Gandiva)
 
