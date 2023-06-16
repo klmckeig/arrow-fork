@@ -123,7 +123,11 @@ class ZSTDCompressor : public Compressor {
     out_buf.pos = 0;
 
     size_t ret;
-    ret = ZSTD_compressStream(stream_, &out_buf, &in_buf);
+    // ret = ZSTD_compressStream(stream_, &out_buf, &in_buf);
+    ret = 
+
+
+
     if (ZSTD_isError(ret)) {
       return ZSTDError(ret, "ZSTD compress failed: ");
     }
