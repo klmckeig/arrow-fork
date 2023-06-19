@@ -72,7 +72,8 @@ set(ARROW_THIRDPARTY_DEPENDENCIES
     utf8proc
     xsimd
     ZLIB
-    zstd)
+    zstd
+    qat_zstd_plugin)
 
 # For backward compatibility. We use "BOOST_SOURCE" if "Boost_SOURCE"
 # isn't specified and "BOOST_SOURCE" is specified.
@@ -2619,7 +2620,7 @@ macro(build_qat_zstd_plugin)
       -DENABLE_USDM_DRV=1 
       -DZSTDLIB=${ARROW_QAT_ZSTD_LIBZSTD})
 
-  set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/lib/libqatseqprod.a")
+  set(QAT_ZSTD_STATIC_LIB "${QAT_ZSTD_PREFIX}/lib/libqatseqprod.a")
 
   externalproject_add(qat_zstd_ep
                       ${EP_COMMON_OPTIONS}
@@ -2645,17 +2646,29 @@ macro(build_qat_zstd_plugin)
 endmacro()
 
 if(ARROW_WITH_QAT)
-  resolve_dependency(qat_zstd_plugin
-                     REQUIRED_VERSION
-                     0.0.1)
+  # resolve_dependency(qat_zstd_plugin
+  #                   REQUIRED_VERSION
+  #                   0.0.1)
 
-  set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/lib/libqatseqprod.a")
+  set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/src/libqatseqprod.a")
   add_library(qatseqprod::qatseqprod STATIC IMPORTED)
   set(QAT_ZSTD_INCLUDE_DIRS "/home/yangyang/QAT-ZSTD-Plugin/src")
   set_target_properties(qatseqprod::qatseqprod
-                        PROPERTIES INTERFACE_LINK_LIBRARIES Threads::Threads
-                                   IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB})
+                        PROPERTIES IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB}
+                                   INTERFACE_INCLUDE_DIRECTORIES ${QAT_ZSTD_INCLUDE_DIRS})
+  add_library(qat::qat SHARED IMPORTED)
+  set(QAT_LIB "/usr/local/lib/libqat_s.so")
+  set_target_properties(qat::qat
+                        PROPERTIES IMPORTED_LOCATION ${QAT_LIB})
+  add_library(qat::usdm SHARED IMPORTED)
+  set(USDM_LIB "/usr/local/lib/libusdm_drv_s.so")
+  set_target_properties(qat::usdm
+                        PROPERTIES IMPORTED_LOCATION ${USDM_LIB})
   set(ARROW_QAT_ZSTD_LIBZSTD qatseqprod::qatseqprod)
+  list(APPEND ARROW_QAT_ZSTD_LIBZSTD qat::qat)
+  list(APPEND ARROW_QAT_ZSTD_LIBZSTD qat::usdm)
+  message(${ARROW_QAT_ZSTD_LIBZSTD})
+
 endif()
 # ----------------------------------------------------------------------
 # RE2 (required for Gandiva)

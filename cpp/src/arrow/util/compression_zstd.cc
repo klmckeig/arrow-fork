@@ -125,11 +125,7 @@ class ZSTDCompressor : public Compressor {
     out_buf.pos = 0;
 
     size_t ret;
-    // ret = ZSTD_compressStream(stream_, &out_buf, &in_buf);
-    ret = 
-
-
-
+    ret = ZSTD_compressStream(stream_, &out_buf, &in_buf);
     if (ZSTD_isError(ret)) {
       return ZSTDError(ret, "ZSTD compress failed: ");
     }
@@ -228,19 +224,20 @@ class ZSTDCodec : public Codec {
 
     if ((int)res <= 0) {
         printf("Failed to set fallback\n");
-        goto exit;
+       ZSTD_freeCCtx(zc);
+    QZSTD_freeSeqProdState(sequenceProducerState);
+    QZSTD_stopQatDevice();
+    return static_cast<int64_t>(res);
     }
 
     /* compress */
     size_t cSize = ZSTD_compress2(zc, output_buffer, output_buffer_len, input, input_len);
     if ((int)cSize <= 0) {
         printf("Compress failed\n");
-        goto exit;
     }
 
     // size_t ret = ZSTD_compress(output_buffer, static_cast<size_t>(output_buffer_len),
     //                            input, static_cast<size_t>(input_len), compression_level_);
-    exit:
     ZSTD_freeCCtx(zc);
     QZSTD_freeSeqProdState(sequenceProducerState);
     QZSTD_stopQatDevice();
