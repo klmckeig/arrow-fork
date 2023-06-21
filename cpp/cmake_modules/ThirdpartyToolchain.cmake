@@ -1966,14 +1966,24 @@ macro(build_jemalloc)
   # installations.
 
   message(STATUS "Building jemalloc from source")
-
+  # ARROW_JEMALLOC_USE_SHARED: ON  
   set(ARROW_JEMALLOC_USE_SHARED OFF)
+  # ARROW_JEMALLOC_USE_SHARED: OFF
+  
   set(JEMALLOC_PREFIX
       "${CMAKE_CURRENT_BINARY_DIR}/jemalloc_ep-prefix/src/jemalloc_ep/dist/")
   set(JEMALLOC_LIB_DIR "${JEMALLOC_PREFIX}/lib")
   set(JEMALLOC_STATIC_LIB
       "${JEMALLOC_LIB_DIR}/libjemalloc_pic${CMAKE_STATIC_LIBRARY_SUFFIX}")
   set(JEMALLOC_CONFIGURE_COMMAND ./configure "AR=${CMAKE_AR}" "CC=${CMAKE_C_COMPILER}")
+
+  # JEMALLOC_PREFIX: /root/arrow-fork/cpp/build/jemalloc_ep-prefix/src/jemalloc_ep/dist/
+  # JEMALLOC_LIB_DIR: /root/arrow-fork/cpp/build/jemalloc_ep-prefix/src/jemalloc_ep/dist//lib
+  # JEMALLOC_STATIC_LIB: /root/arrow-fork/cpp/build/jemalloc_ep-prefix/src/jemalloc_ep/dist//lib/libjemalloc_pic.a
+  # JEMALLOC_CONFIGURE_COMMAND: ./configure;AR=/usr/bin/ar;CC=/usr/bin/cc
+
+
+
   if(CMAKE_OSX_SYSROOT)
     list(APPEND JEMALLOC_CONFIGURE_COMMAND "SDKROOT=${CMAKE_OSX_SYSROOT}")
   endif()
@@ -1996,6 +2006,13 @@ macro(build_jemalloc)
        # See https://github.com/jemalloc/jemalloc/issues/1237
        "--disable-initial-exec-tls"
        ${EP_LOG_OPTIONS})
+
+  # JEMALLOC_CONFIGURE_COMMAND: ./configure;AR=/usr/bin/ar;
+  # CC=/usr/bin/cc;--prefix=/root/arrow-fork/cpp/build/jemalloc_ep-prefix/src/jemalloc_ep/dist/;
+  # --libdir=/root/arrow-fork/cpp/build/jemalloc_ep-prefix/src/jemalloc_ep/dist//lib;
+  # --with-jemalloc-prefix=je_arrow_;--with-private-namespace=je_arrow_private_;
+  # --without-export;--disable-shared;--disable-cxx;--disable-libdl;--disable-initial-exec-tls
+
   if(${UPPERCASE_BUILD_TYPE} STREQUAL "DEBUG")
     # Enable jemalloc debug checks when Arrow itself has debugging enabled
     list(APPEND JEMALLOC_CONFIGURE_COMMAND "--enable-debug")
@@ -2004,6 +2021,8 @@ macro(build_jemalloc)
   if(CMAKE_OSX_SYSROOT)
     list(APPEND JEMALLOC_BUILD_COMMAND "SDKROOT=${CMAKE_OSX_SYSROOT}")
   endif()
+  # JEMALLOC_BUILD_COMMAND: /usr/bin/make
+
   externalproject_add(jemalloc_ep
                       ${EP_COMMON_OPTIONS}
                       URL ${JEMALLOC_SOURCE_URL}
@@ -2015,12 +2034,21 @@ macro(build_jemalloc)
                       BUILD_COMMAND ${JEMALLOC_BUILD_COMMAND}
                       BUILD_BYPRODUCTS "${JEMALLOC_STATIC_LIB}"
                       INSTALL_COMMAND ${MAKE} -j1 install)
+# EP_COMMON_OPTIONS: LIST_SEPARATOR;|;LOG_CONFIGURE;1;LOG_BUILD;1;LOG_INSTALL;1;LOG_DOWNLOAD;1;LOG_OUTPUT_ON_FAILURE;1
+# URL: https://github.com/jemalloc/jemalloc/releases/download/5.3.0/jemalloc-5.3.0.tar.bz2;https://apache.jfrog.io/artifactory/arrow/thirdparty/7.0.0/jemalloc-5.3.0.tar.bz2
+# BUILD_BYPRODUCTS: /root/arrow-fork/cpp/build/jemalloc_ep-prefix/src/jemalloc_ep/dist//lib/libjemalloc_pic.a
+# BUILD_COMMAND: /usr/bin/make
+# CONFIGURE_COMMAND: ./configure;AR=/usr/bin/ar;CC=/usr/bin/cc;--prefix=/root/arrow-fork/cpp/build/jemalloc_ep-prefix/src/jemalloc_ep/dist/;--libdir=/root/arrow-fork/cpp/build/jemalloc_ep-prefix/src/jemalloc_ep/dist//lib;--with-jemalloc-prefix=je_arrow_;--with-private-namespace=je_arrow_private_;--without-export;--disable-shared;--disable-cxx;--disable-libdl;--disable-initial-exec-tls;--enable-debug
+# INSTALL_COMMAND: /usr/bin/make -j1 install
+
 
   # Don't use the include directory directly so that we can point to a path
   # that is unique to our codebase.
   set(JEMALLOC_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/jemalloc_ep-prefix/src/")
   # The include directory must exist before it is referenced by a target.
   file(MAKE_DIRECTORY "${JEMALLOC_INCLUDE_DIR}")
+  # JEMALLOC_INCLUDE_DIR: /root/arrow-fork/cpp/build/jemalloc_ep-prefix/src/
+  
   add_library(jemalloc::jemalloc STATIC IMPORTED)
   set_target_properties(jemalloc::jemalloc
                         PROPERTIES INTERFACE_LINK_LIBRARIES Threads::Threads
@@ -2030,14 +2058,20 @@ macro(build_jemalloc)
   add_dependencies(jemalloc::jemalloc jemalloc_ep)
 
   list(APPEND ARROW_BUNDLED_STATIC_LIBS jemalloc::jemalloc)
+  # ARROW_BUNDLED_STATIC_LIBS: jemalloc::jemalloc
 
+  # jemalloc_VENDORED: 
   set(jemalloc_VENDORED TRUE)
+  # jemalloc_VENDORED: TRUE
   # For config.h.cmake
+  # ARROW_JEMALLOC_VENDORED: 
   set(ARROW_JEMALLOC_VENDORED ${jemalloc_VENDORED})
+  # ARROW_JEMALLOC_VENDORED: TRUE
 endmacro()
 
 if(ARROW_JEMALLOC)
   resolve_dependency(jemalloc HAVE_ALT TRUE)
+  cmake_print_variables(QAT_ZSTD_PREFIX)
 endif()
 
 # ----------------------------------------------------------------------
