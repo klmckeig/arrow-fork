@@ -2645,7 +2645,7 @@ macro(build_qat_zstd_plugin)
                       URL ${QAT_ZSTD_SOURCE_URL}
                       BUILD_BYPRODUCTS "${QAT_ZSTD_STATIC_LIB}")
 
-                      message("qat_zstd_ep: ${qat_zstd_ep}")
+  # qat_zstd_ep: 
   # EP_COMMON_OPTIONS: LIST_SEPARATOR;|;LOG_CONFIGURE;1;LOG_BUILD;1;LOG_INSTALL;1;LOG_DOWNLOAD;1;LOG_OUTPUT_ON_FAILURE;1
   # QAT_ZSTD_SOURCE_URL: https://github.com/intel/QAT-ZSTD-Plugin/archive/refs/tags/v0.0.1.tar.gz
   # QAT_ZSTD_STATIC_LIB: /root/arrow-fork/cpp/build/qat_zstd_ep-install/lib/libqatseqprod.a
@@ -2690,7 +2690,7 @@ if(ARROW_WITH_QAT)
   resolve_dependency(qat_zstd_plugin
                     REQUIRED_VERSION
                     0.0.1)
-
+  message("QAT_ZSTD_STATIC_LIB: ${QAT_ZSTD_STATIC_LIB}")
   # set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/src/libqatseqprod.a")
   # add_library(qatseqprod::qatseqprod STATIC IMPORTED)
   # set(QAT_ZSTD_INCLUDE_DIRS "/home/yangyang/QAT-ZSTD-Plugin/src")
