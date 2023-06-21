@@ -2071,7 +2071,6 @@ endmacro()
 
 if(ARROW_JEMALLOC)
   resolve_dependency(jemalloc HAVE_ALT TRUE)
-  cmake_print_variables(QAT_ZSTD_PREFIX)
 endif()
 
 # ----------------------------------------------------------------------
