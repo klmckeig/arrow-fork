@@ -2690,6 +2690,8 @@ if(ARROW_WITH_QAT)
   resolve_dependency(qat_zstd_plugin
                     REQUIRED_VERSION
                     0.0.1)
+
+  # QAT_ZSTD_STATIC_LIB: /root/arrow-fork/cpp/build/qat_zstd_ep-install/lib/libqatseqprod.a
   message("QAT_ZSTD_STATIC_LIB: ${QAT_ZSTD_STATIC_LIB}")
   # set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/src/libqatseqprod.a")
   # add_library(qatseqprod::qatseqprod STATIC IMPORTED)
