@@ -209,11 +209,12 @@ class ZSTDCodec : public Codec {
 
   Result<int64_t> Compress(int64_t input_len, const uint8_t* input,
                            int64_t output_buffer_len, uint8_t* output_buffer) override {
-     ZSTD_CCtx *const zc = ZSTD_createCCtx();
+    ZSTD_CCtx *const zc = ZSTD_createCCtx();
+    // ZSTD_registerSequenceProducer(zc, NULL, NULL);
+
     QZSTD_startQatDevice();
     void *sequenceProducerState = QZSTD_createSeqProdState();
 
-    /* register qatSequenceProducer */
     ZSTD_registerSequenceProducer(
         zc,
         sequenceProducerState,
@@ -222,24 +223,23 @@ class ZSTDCodec : public Codec {
 
     size_t res = ZSTD_CCtx_setParameter(zc, ZSTD_c_enableSeqProducerFallback, 1);
 
-    if ((int)res <= 0) {
-        printf("Failed to set fallback\n");
-        goto exit;
-    }
+    // rc = ZSTD_CCtx_setParameter(zc, ZSTD_c_searchForExternalRepcodes, ZSTD_ps_auto);
+
+    // res = ZSTD_CCtx_setParameter(zc, ZSTD_c_compressionLevel, /*cLevel*/ 9);
 
     /* compress */
     size_t cSize = ZSTD_compress2(zc, output_buffer, output_buffer_len, input, input_len);
     if ((int)cSize <= 0) {
         printf("Compress failed\n");
-        goto exit;
+        ZSTD_freeCCtx(zc);
+        return static_cast<int64_t>(cSize);
     }
 
     // size_t ret = ZSTD_compress(output_buffer, static_cast<size_t>(output_buffer_len),
     //                            input, static_cast<size_t>(input_len), compression_level_);
-    exit:
     ZSTD_freeCCtx(zc);
     QZSTD_freeSeqProdState(sequenceProducerState);
-    QZSTD_stopQatDevice();
+    // QZSTD_stopQatDevice();
     return static_cast<int64_t>(cSize);
   }
 
