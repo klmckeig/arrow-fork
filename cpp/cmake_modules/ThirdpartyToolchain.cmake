@@ -827,6 +827,14 @@ else()
   )
 endif()
 
+if(DEFINED ENV{ARROW_QAT_ZSTD_URL})
+  set(QAT_ZSTD_SOURCE_URL "$ENV{ARROW_QAT_ZSTD_URL}")
+else()
+  set_urls(QAT_ZSTD_SOURCE_URL
+           "https://github.com/intel/QAT-ZSTD-Plugin/archive/refs/tags/${ARROW_QAT_ZSTD_BUILD_VERSION}.tar.gz"
+  )
+endif()
+
 # ----------------------------------------------------------------------
 # ExternalProject options
 
@@ -2590,8 +2598,8 @@ if(ARROW_WITH_ZSTD)
                      PC_PACKAGE_NAMES
                      libzstd
                      REQUIRED_VERSION
-                     1.4.0)
-
+                     1.4.0)                    
+                     
   if(ZSTD_VENDORED)
     set(ARROW_ZSTD_LIBZSTD zstd::libzstd_static)
   else()
@@ -2611,6 +2619,8 @@ macro(build_qat_zstd_plugin)
   message(STATUS "Building QAT ZSTD Plugin from source")
   set(QAT_ZSTD_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/qat_zstd_ep-install")
 
+  # QAT_ZSTD_PREFIX: /root/arrow-fork/cpp/build/qat_zstd_ep-install
+
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -lqat_s -lusdm_drv_s")
   set(QATZSTD_CMAKE_ARGS
       ${EP_COMMON_CMAKE_ARGS}
@@ -2618,9 +2628,14 @@ macro(build_qat_zstd_plugin)
       -DCMAKE_INSTALL_LIBDIR=${QAT_ZSTD_PREFIX}/lib
       -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
       -DENABLE_USDM_DRV=1 
-      -DZSTDLIB=${ARROW_QAT_ZSTD_LIBZSTD})
+      -DQATZSTDLIB=${ARROW_QAT_ZSTD_LIBZSTD})
 
   set(QAT_ZSTD_STATIC_LIB "${QAT_ZSTD_PREFIX}/lib/libqatseqprod.a")
+
+  # QAT_ZSTD_STATIC_LIB: /root/arrow-fork/cpp/build/qat_zstd_ep-install/lib/libqatseqprod.a
+  # QAT_ZSTD_PREFIX: /root/arrow-fork/cpp/build/qat_zstd_ep-install
+  # CMAKE_CXX_FLAGS:  -fdiagnostics-color=always -lqat_s -lusdm_drv_s
+  # ARROW_QAT_ZSTD_LIBZSTD: 
 
   externalproject_add(qat_zstd_ep
                       ${EP_COMMON_OPTIONS}
@@ -2630,10 +2645,36 @@ macro(build_qat_zstd_plugin)
                       URL ${QAT_ZSTD_SOURCE_URL}
                       BUILD_BYPRODUCTS "${QAT_ZSTD_STATIC_LIB}")
 
+                      message("qat_zstd_ep: ${qat_zstd_ep}")
+  # EP_COMMON_OPTIONS: LIST_SEPARATOR;|;LOG_CONFIGURE;1;LOG_BUILD;1;LOG_INSTALL;1;LOG_DOWNLOAD;1;LOG_OUTPUT_ON_FAILURE;1
+  # QAT_ZSTD_SOURCE_URL: https://github.com/intel/QAT-ZSTD-Plugin/archive/refs/tags/v0.0.1.tar.gz
+  # QAT_ZSTD_STATIC_LIB: /root/arrow-fork/cpp/build/qat_zstd_ep-install/lib/libqatseqprod.a
+
+  # QATZSTD_CMAKE_ARGS: 
+  # -DCMAKE_C_COMPILER=/usr/bin/cc;-DCMAKE_CXX_COMPILER=/usr/bin/c++;-DCMAKE_AR=/usr/bin/ar;-DCMAKE_RANLIB=/usr/bin/ranlib;
+  # -DBUILD_SHARED_LIBS=OFF;-DBUILD_STATIC_LIBS=ON;-DBUILD_TESTING=OFF;-DCMAKE_BUILD_TYPE=DEBUG;
+  # -DCMAKE_CXX_FLAGS= -fdiagnostics-color=always -fPIC;
+  # -DCMAKE_CXX_FLAGS_DEBUG=-g -Werror -O0 -ggdb -Wno-error;-DCMAKE_CXX_FLAGS_MISIZEREL=-Os -DNDEBUG;
+  # -DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -O2 -ftree-vectorize;-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -g -DNDEBUG -O0 -ggdb  -O2 -ftree-vectorize;
+  # -DCMAKE_CXX_STANDARD=17;-DCMAKE_C_FLAGS= -fPIC;
+  # -DCMAKE_C_FLAGS_DEBUG=-g -Werror -O0 -ggdb -Wno-error;
+  # -DCMAKE_C_FLAGS_MISIZEREL=-Os -DNDEBUG;
+  # -DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -O2 -ftree-vectorize;-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -g -DNDEBUG -O0 -ggdb  -O2 -ftree-vectorize;
+  # -DCMAKE_EXPORT_NO_PACKAGE_REGISTRY=;
+  # -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=;
+  # -DCMAKE_INSTALL_LIBDIR=lib;-DCMAKE_VERBOSE_MAKEFILE=FALSE;-DCMAKE_INSTALL_PREFIX=/root/arrow-fork/cpp/build/qat_zstd_ep-install;
+  # -DCMAKE_INSTALL_LIBDIR=/root/arrow-fork/cpp/build/qat_zstd_ep-install/lib;-DCMAKE_CXX_FLAGS= -fdiagnostics-color=always -lqat_s -lusdm_drv_s;
+  # -DENABLE_USDM_DRV=1;
+  # -DQATZSTDLIB=
+
   file(MAKE_DIRECTORY "${QAT_ZSTD_PREFIX}/include")
+  # QAT_ZSTD_PREFIX}/include: /root/arrow-fork/cpp/build/qat_zstd_ep-install/include
+  
 
   add_library(qatseqprod::qatseqprod STATIC IMPORTED)
   set(QAT_ZSTD_INCLUDE_DIRS "${QAT_ZSTD_PREFIX}/include")
+  # QAT_ZSTD_INCLUDE_DIRS: /root/arrow-fork/cpp/build/qat_zstd_ep-install/include
+
   set_target_properties(qatseqprod::qatseqprod
                         PROPERTIES IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB}
                                    INTERFACE_INCLUDE_DIRECTORIES ${QAT_ZSTD_INCLUDE_DIRS})
@@ -2642,33 +2683,35 @@ macro(build_qat_zstd_plugin)
   add_dependencies(qatseqprod::qatseqprod qat_zstd_ep)
 
   list(APPEND ARROW_BUNDLED_STATIC_LIBS qatseqprod::qatseqprod)
-
+  # ARROW_BUNDLED_STATIC_LIBS: jemalloc::jemalloc;qatseqprod::qatseqprod
 endmacro()
 
 if(ARROW_WITH_QAT)
-  # resolve_dependency(qat_zstd_plugin
-  #                   REQUIRED_VERSION
-  #                   0.0.1)
+  resolve_dependency(qat_zstd_plugin
+                    REQUIRED_VERSION
+                    0.0.1)
 
-  set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/src/libqatseqprod.a")
-  add_library(qatseqprod::qatseqprod STATIC IMPORTED)
-  set(QAT_ZSTD_INCLUDE_DIRS "/home/yangyang/QAT-ZSTD-Plugin/src")
-  set_target_properties(qatseqprod::qatseqprod
-                        PROPERTIES IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB}
-                                   INTERFACE_INCLUDE_DIRECTORIES ${QAT_ZSTD_INCLUDE_DIRS})
-  add_library(qat::qat SHARED IMPORTED)
-  set(QAT_LIB "/usr/local/lib/libqat_s.so")
-  set_target_properties(qat::qat
-                        PROPERTIES IMPORTED_LOCATION ${QAT_LIB})
-  add_library(qat::usdm SHARED IMPORTED)
-  set(USDM_LIB "/usr/local/lib/libusdm_drv_s.so")
-  set_target_properties(qat::usdm
-                        PROPERTIES IMPORTED_LOCATION ${USDM_LIB})
-  set(ARROW_QAT_ZSTD_LIBZSTD qatseqprod::qatseqprod)
-  list(APPEND ARROW_QAT_ZSTD_LIBZSTD qat::qat)
-  list(APPEND ARROW_QAT_ZSTD_LIBZSTD qat::usdm)
-  message(${ARROW_QAT_ZSTD_LIBZSTD})
+  # set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/src/libqatseqprod.a")
+  # add_library(qatseqprod::qatseqprod STATIC IMPORTED)
+  # set(QAT_ZSTD_INCLUDE_DIRS "/home/yangyang/QAT-ZSTD-Plugin/src")
+  # set_target_properties(qatseqprod::qatseqprod
+  #                       PROPERTIES IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB}
+  #                                  INTERFACE_INCLUDE_DIRECTORIES ${QAT_ZSTD_INCLUDE_DIRS})
+  # add_library(qat::qat SHARED IMPORTED)
+  # set(QAT_LIB "/usr/local/lib/libqat_s.so")
+  # set_target_properties(qat::qat
+  #                       PROPERTIES IMPORTED_LOCATION ${QAT_LIB})
+  # add_library(qat::usdm SHARED IMPORTED)
+  # set(USDM_LIB "/usr/local/lib/libusdm_drv_s.so")
+  # set_target_properties(qat::usdm
+  #                       PROPERTIES IMPORTED_LOCATION ${USDM_LIB})
+  # set(ARROW_QAT_ZSTD_LIBZSTD qatseqprod::qatseqprod)
+  # list(APPEND ARROW_QAT_ZSTD_LIBZSTD qat::qat)
+  # list(APPEND ARROW_QAT_ZSTD_LIBZSTD qat::usdm)
+  # message(${ARROW_QAT_ZSTD_LIBZSTD})
 
+  # include(CMakePrintHelpers)
+  cmake_print_variables(QAT_ZSTD_PREFIX)
 endif()
 # ----------------------------------------------------------------------
 # RE2 (required for Gandiva)
