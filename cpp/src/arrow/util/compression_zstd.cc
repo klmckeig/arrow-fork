@@ -180,21 +180,23 @@ class ZSTDCodec : public Codec {
                                ? kZSTDDefaultCompressionLevel
                                : compression_level) {
                                  QZSTD_startQatDevice();
-    sequenceProducerState = QZSTD_createSeqProdState();
+    ZSTD_registerSequenceProducer(zc, NULL, NULL);
 
-    /* register qatSequenceProducer */
-    ZSTD_registerSequenceProducer(
-        zc,
-        sequenceProducerState,
-        qatSequenceProducer
-    );
+    // sequenceProducerState = QZSTD_createSeqProdState();
 
-    size_t res = ZSTD_CCtx_setParameter(zc, ZSTD_c_enableSeqProducerFallback, 1);
+    // /* register qatSequenceProducer */
+    // ZSTD_registerSequenceProducer(
+    //     zc,
+    //     sequenceProducerState,
+    //     qatSequenceProducer
+    // );
+
+    // size_t res = ZSTD_CCtx_setParameter(zc, ZSTD_c_enableSeqProducerFallback, 1);
   }
 
   ~ZSTDCodec() {
     ZSTD_freeCCtx(zc);
-    QZSTD_freeSeqProdState(sequenceProducerState);
+    // QZSTD_freeSeqProdState(sequenceProducerState);
     // QZSTD_stopQatDevice();
   }
 
@@ -250,7 +252,6 @@ class ZSTDCodec : public Codec {
     if ((int)cSize <= 0) {
         printf("Compress failed\n");
         ZSTD_freeCCtx(zc);
-        QZSTD_freeSeqProdState(sequenceProducerState);
         return static_cast<int64_t>(cSize);
     }
 
