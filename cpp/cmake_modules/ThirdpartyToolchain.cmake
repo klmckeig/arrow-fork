@@ -76,7 +76,8 @@ set(ARROW_THIRDPARTY_DEPENDENCIES
     utf8proc
     xsimd
     ZLIB
-    zstd)
+    zstd
+    qatzstd)
 
 # For backward compatibility. We use "BOOST_SOURCE" if "Boost_SOURCE"
 # isn't specified and "BOOST_SOURCE" is specified.
@@ -225,7 +226,7 @@ macro(build_dependency DEPENDENCY_NAME)
     build_zlib()
   elseif("${DEPENDENCY_NAME}" STREQUAL "zstd")
     build_zstd()
-  elseif("${DEPENDENCY_NAME}" STREQUAL "qat_zstd_plugin")
+  elseif("${DEPENDENCY_NAME}" STREQUAL "qatzstd")
     build_qat_zstd_plugin()
   else()
     message(FATAL_ERROR "Unknown thirdparty dependency to build: ${DEPENDENCY_NAME}")
@@ -853,14 +854,6 @@ else()
   set_urls(ZLIB_SOURCE_URL
            "https://zlib.net/fossils/zlib-${ARROW_ZLIB_BUILD_VERSION}.tar.gz"
            "${THIRDPARTY_MIRROR_URL}/zlib-${ARROW_ZLIB_BUILD_VERSION}.tar.gz")
-endif()
-
-if(DEFINED ENV{ARROW_QAT_ZSTD_URL})
-  set(QAT_ZSTD_SOURCE_URL "$ENV{ARROW_QAT_ZSTD_URL}")
-else()
-  set_urls(QAT_ZSTD_SOURCE_URL
-           "https://github.com/intel/QAT-ZSTD-Plugin/archive/refs/tags/${ARROW_QAT_ZSTD_BUILD_VERSION}.tar.gz"
-  )
 endif()
 
 # ----------------------------------------------------------------------
@@ -2485,7 +2478,15 @@ endif()
 macro(build_zstd)
   message(STATUS "Building Zstandard from source")
 
-  set(ZSTD_PREFIX "/home/yangyang/zstd-1.5.4")
+  set(ZSTD_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/zstd_ep-install")
+
+  set(ZSTD_CMAKE_ARGS
+      ${EP_COMMON_CMAKE_ARGS}
+      "-DCMAKE_INSTALL_PREFIX=${ZSTD_PREFIX}"
+      -DZSTD_BUILD_PROGRAMS=OFF
+      -DZSTD_BUILD_SHARED=OFF
+      -DZSTD_BUILD_STATIC=ON
+      -DZSTD_MULTITHREAD_SUPPORT=OFF)
 
   if(MSVC)
     set(ZSTD_STATIC_LIB "${ZSTD_PREFIX}/lib/zstd_static.lib")
@@ -2496,7 +2497,19 @@ macro(build_zstd)
     set(ZSTD_STATIC_LIB "${ZSTD_PREFIX}/lib/libzstd.a")
   endif()
 
+  externalproject_add(zstd_ep
+                      ${EP_COMMON_OPTIONS}
+                      CMAKE_ARGS ${ZSTD_CMAKE_ARGS}
+                      SOURCE_SUBDIR "build/cmake"
+                      INSTALL_DIR ${ZSTD_PREFIX}
+                      URL ${ZSTD_SOURCE_URL}
+                      URL_HASH "SHA256=${ARROW_ZSTD_BUILD_SHA256_CHECKSUM}"
+                      BUILD_BYPRODUCTS "${ZSTD_STATIC_LIB}")
+
+  file(MAKE_DIRECTORY "${ZSTD_PREFIX}/include")
+
   add_library(zstd::libzstd_static STATIC IMPORTED)
+
   set_target_properties(zstd::libzstd_static PROPERTIES IMPORTED_LOCATION
                                                         "${ZSTD_STATIC_LIB}")
   target_include_directories(zstd::libzstd_static BEFORE
@@ -2507,6 +2520,14 @@ macro(build_zstd)
   # set_target_properties(zstd::libzstd_static
   #                       PROPERTIES IMPORTED_LOCATION "${ZSTD_STATIC_LIB}"
   #                                  INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_PREFIX}/lib")
+
+  set_target_properties(zstd::libzstd_static
+                        PROPERTIES IMPORTED_LOCATION "${ZSTD_STATIC_LIB}"
+                                   INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_PREFIX}/include")
+
+  add_dependencies(toolchain zstd_ep)
+  add_dependencies(zstd::libzstd_static zstd_ep)
+>>>>>>> 540687252 (refactor cmake file and qat device compression)
 
   list(APPEND ARROW_BUNDLED_STATIC_LIBS zstd::libzstd_static)
 
@@ -2539,71 +2560,68 @@ if(ARROW_WITH_ZSTD)
 endif()
 
 macro(build_qat_zstd_plugin)
+  if(NOT TARGET ${ARROW_ZSTD_LIBZSTD})
+    find_package(zstdAlt REQUIRED)
+  endif()
+
   message(STATUS "Building QAT ZSTD Plugin from source")
-  set(QAT_ZSTD_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/qat_zstd_ep-install")
+  find_program(MAKE_PROGRAM make REQUIRED)
+  set(QATZSTD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/qatzstd-src")
+  set(QATZSTD_INCLUDE_DIR "${QATZSTD_SOURCE_DIR}/src")
+  set(QATZSTD_STATIC_LIB_TARGETS "${QATZSTD_SOURCE_DIR}/src/libqatseqprod.a")
+  set(QATZSTD_MAKE_ARGS "ENABLE_USDM_DRV=1" "ZSTDLIB=${ZSTD_INCLUDE_DIR}"
+                        "DEBUGLEVEL=1")
 
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -lqat_s -lusdm_drv_s")
-  set(QATZSTD_CMAKE_ARGS
-      ${EP_COMMON_CMAKE_ARGS}
-      "-DCMAKE_INSTALL_PREFIX=${QAT_ZSTD_PREFIX}"
-      -DCMAKE_INSTALL_LIBDIR=${QAT_ZSTD_PREFIX}/lib
-      -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
-      -DENABLE_USDM_DRV=1 
-      -DZSTDLIB=${ARROW_QAT_ZSTD_LIBZSTD})
+  set(QATZSTD_SOURCE_URL
+      "https://github.com/intel-collab/applications.qat.shims.zstandard.qatzstdplugin.git"
+  )
+  set(QATZSTD_SOURCE_BRANCH "main")
+  set(QATZSTD_BASE_COMMIT "118cc226e8e8b539a5b349f5876fc21d8e4d1c1a")
 
-  set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/lib/libqatseqprod.a")
-  # set(QAT_ZSTD_STATIC_LIB "${QAT_ZSTD_PREFIX}/lib/libqatseqprod.a")
+  externalproject_add(
+    qatzstd
+    # URL ${ARROW_QATZSTD_SOURCE_URL} URL_HASH
+    # ${ARROW_QATZSTD_BUILD_SHA256_CHECKSUM}
+    GIT_REPOSITORY ${QATZSTD_SOURCE_URL}
+    GIT_TAG ${QATZSTD_BASE_COMMIT}
+    USES_TERMINAL_DOWNLOAD ON
+    SOURCE_DIR ${QATZSTD_SOURCE_DIR}
+    BINARY_DIR ${QATZSTD_BINARY_DIR}
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ${MAKE_PROGRAM} ${QATZSTD_MAKE_ARGS}
+    INSTALL_COMMAND ""
+    BUILD_BYPRODUCTS ${QATZSTD_STATIC_LIB_TARGETS}
+    BUILD_IN_SOURCE 1)
 
-  externalproject_add(qat_zstd_ep
-                      ${EP_COMMON_OPTIONS}
-                      CMAKE_ARGS ${QATZSTD_CMAKE_ARGS}
-                      SOURCE_SUBDIR "build/cmake"
-                      INSTALL_DIR ${QAT_ZSTD_PREFIX}
-                      URL ${QAT_ZSTD_SOURCE_URL}
-                      BUILD_BYPRODUCTS "${QAT_ZSTD_STATIC_LIB}")
+  add_library(qatzstd::qatzstd STATIC IMPORTED)
 
-  file(MAKE_DIRECTORY "${QAT_ZSTD_PREFIX}/include")
+  file(MAKE_DIRECTORY "${QATZSTD_INCLUDE_DIR}")
 
-  add_library(qatseqprod::qatseqprod STATIC IMPORTED)
-  set(QAT_ZSTD_INCLUDE_DIRS "${QAT_ZSTD_PREFIX}/include")
-  set_target_properties(qatseqprod::qatseqprod
-                        PROPERTIES IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB}
-                                   INTERFACE_INCLUDE_DIRECTORIES ${QAT_ZSTD_INCLUDE_DIRS})
+  find_library(
+    USDM_DRV_LIBRARY REQUIRED
+    NAMES usdm_drv_s
+    PATHS "$ENV{ICP_ROOT}/build"
+    NO_DEFAULT_PATH)
+  find_library(
+    QAT_S_LIBRARY REQUIRED
+    NAMES qat_s
+    PATHS "$ENV{ICP_ROOT}/build"
+    NO_DEFAULT_PATH)
 
-  add_dependencies(toolchain qat_zstd_ep)
-  add_dependencies(qatseqprod::qatseqprod qat_zstd_ep)
+  message(STATUS "Found usdm_drv: ${USDM_DRV_LIBRARY}")
+  message(STATUS "Found qat_s: ${QAT_S_LIBRARY}")
 
-  list(APPEND ARROW_BUNDLED_STATIC_LIBS qatseqprod::qatseqprod)
+  set_target_properties(qatzstd::qatzstd PROPERTIES IMPORTED_LOCATION
+                                                    ${QATZSTD_STATIC_LIB_TARGETS})
+  target_include_directories(qatzstd::qatzstd INTERFACE ${QATZSTD_INCLUDE_DIR})
+  target_link_libraries(qatzstd::qatzstd INTERFACE ${ARROW_ZSTD_LIBZSTD} ${USDM_DRV_LIBRARY}
+                                                  ${QAT_S_LIBRARY})
 
+  add_dependencies(qatzstd::qatzstd qatzstd)
 endmacro()
 
 if(ARROW_WITH_QAT)
-  # resolve_dependency(qat_zstd_plugin
-  #                    REQUIRED_VERSION
-  #                    0.0.1)
-
-  set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/src/libqatseqprod.a")
-  message("QAT_ZSTD_STATIC_LIB: ${QAT_ZSTD_STATIC_LIB}")
-  add_library(qatseqprod::qatseqprod STATIC IMPORTED)
-  set(QAT_ZSTD_INCLUDE_DIRS "/home/yangyang/QAT-ZSTD-Plugin/src")
-  set_target_properties(qatseqprod::qatseqprod
-                        PROPERTIES IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB}
-                                   INTERFACE_INCLUDE_DIRECTORIES ${QAT_ZSTD_INCLUDE_DIRS})
-
-  add_library(qat::qat SHARED IMPORTED)
-  set(QAT_LIB "/usr/local/lib/libqat_s.so")
-  set_target_properties(qat::qat
-                        PROPERTIES IMPORTED_LOCATION ${QAT_LIB})
-  add_library(qat::usdm SHARED IMPORTED)
-  set(USDM_LIB "/usr/local/lib/libusdm_drv_s.so")
-  set_target_properties(qat::usdm
-                        PROPERTIES IMPORTED_LOCATION ${USDM_LIB})
-  set(ARROW_QAT_ZSTD_LIBZSTD qatseqprod::qatseqprod)
-  list(APPEND ARROW_QAT_ZSTD_LIBZSTD qat::qat)
-  list(APPEND ARROW_QAT_ZSTD_LIBZSTD qat::usdm)
-  message(${ARROW_QAT_ZSTD_LIBZSTD})
-
-  # cmake_print_variables(QAT_ZSTD_PREFIX)
+  resolve_dependency(qatzstd)
 endif()
 # ----------------------------------------------------------------------
 # RE2 (required for Gandiva)

@@ -17,11 +17,13 @@
 
 #include "arrow/util/compression_internal.h"
 
+#include <zstd.h>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 
-#include <zstd.h>
+// #include <gflags/gflags.h>
 
 #include "arrow/result.h"
 #include "arrow/status.h"
@@ -29,6 +31,8 @@
 #include "arrow/util/macros.h"
 
 #include "qatseqprod.h"
+
+// DEFINE_bool(ARROW_ENABLE_QAT_ZSTD_OT, false, "if to use qat for zstd compression");
 
 using std::size_t;
 
@@ -178,24 +182,114 @@ class ZSTDCodec : public Codec {
   explicit ZSTDCodec(int compression_level)
       : compression_level_(compression_level == kUseDefaultCompressionLevel
                                ? kZSTDDefaultCompressionLevel
-                               : compression_level) {
-                                 QZSTD_startQatDevice();
-    sequenceProducerState = QZSTD_createSeqProdState();
+                               : compression_level) {}
 
-    /* register qatSequenceProducer */
-    ZSTD_registerSequenceProducer(
-        zc,
-        sequenceProducerState,
-        qatSequenceProducer
-    );
+  Result<int64_t> Decompress(int64_t input_len, const uint8_t* input,
+                             int64_t output_buffer_len, uint8_t* output_buffer) override {
+    if (output_buffer == nullptr) {
+      // We may pass a NULL 0-byte output buffer but some zstd versions demand
+      // a valid pointer: https://github.com/facebook/zstd/issues/1385
+      static uint8_t empty_buffer;
+      DCHECK_EQ(output_buffer_len, 0);
+      output_buffer = &empty_buffer;
+    }
 
-    size_t res = ZSTD_CCtx_setParameter(zc, ZSTD_c_enableSeqProducerFallback, 1);
+    size_t ret = ZSTD_decompress(output_buffer, static_cast<size_t>(output_buffer_len),
+                                 input, static_cast<size_t>(input_len));
+    if (ZSTD_isError(ret)) {
+      return ZSTDError(ret, "ZSTD decompression failed: ");
+    }
+    if (static_cast<int64_t>(ret) != output_buffer_len) {
+      return Status::IOError("Corrupt ZSTD compressed data.");
+    }
+    return static_cast<int64_t>(ret);
   }
 
-  ~ZSTDCodec() {
-    ZSTD_freeCCtx(zc);
-    QZSTD_freeSeqProdState(sequenceProducerState);
-    // QZSTD_stopQatDevice();
+  int64_t MaxCompressedLen(int64_t input_len,
+                           const uint8_t* ARROW_ARG_UNUSED(input)) override {
+    DCHECK_GE(input_len, 0);
+    return ZSTD_compressBound(static_cast<size_t>(input_len));
+  }
+
+  Result<int64_t> Compress(int64_t input_len, const uint8_t* input,
+                           int64_t output_buffer_len, uint8_t* output_buffer) override {
+    size_t ret = ZSTD_compress(output_buffer, static_cast<size_t>(output_buffer_len),
+                               input, static_cast<size_t>(input_len), compression_level_);
+    if (ZSTD_isError(ret)) {
+      return ZSTDError(ret, "ZSTD compression failed: ");
+    }
+    return static_cast<int64_t>(ret);
+  }
+
+  Result<std::shared_ptr<Compressor>> MakeCompressor() override {
+    auto ptr = std::make_shared<ZSTDCompressor>(compression_level_);
+    RETURN_NOT_OK(ptr->Init());
+    return ptr;
+  }
+
+  Result<std::shared_ptr<Decompressor>> MakeDecompressor() override {
+    auto ptr = std::make_shared<ZSTDDecompressor>();
+    RETURN_NOT_OK(ptr->Init());
+    return ptr;
+  }
+
+  Compression::type compression_type() const override { return Compression::ZSTD; }
+  int minimum_compression_level() const override { return ZSTD_minCLevel(); }
+  int maximum_compression_level() const override { return ZSTD_maxCLevel(); }
+  int default_compression_level() const override { return kZSTDDefaultCompressionLevel; }
+
+  int compression_level() const override { return compression_level_; }
+
+ private:
+  const int compression_level_;
+};
+
+// ----------------------------------------------------------------------
+// QATZSTD codec implementation
+
+class QATDevice {
+ public:
+  QATDevice() {
+    if (QZSTD_startQatDevice() == QZSTD_FAIL) {
+      ARROW_LOG(WARNING) << "QZSTD_startQatDevice failed";
+    } else {
+      initialized_ = true;
+    }
+  }
+
+  ~QATDevice() {
+    if (initialized_) {
+      QZSTD_stopQatDevice();
+    }
+  }
+
+  static std::shared_ptr<QATDevice> getInstance() {
+    std::call_once(initQAT_, []() { instance_ = std::make_shared<QATDevice>(); });
+    return instance_;
+  }
+
+  bool deviceInitialized() { return initialized_; }
+
+ private:
+  inline static std::shared_ptr<QATDevice> instance_;
+  inline static std::once_flag initQAT_;
+  bool initialized_{false};
+};
+
+class QATZSTDCodec : public Codec {
+ public:
+  explicit QATZSTDCodec(int compression_level)
+      : compression_level_(compression_level == kUseDefaultCompressionLevel
+                               ? kZSTDDefaultCompressionLevel
+                               : compression_level) {}
+
+  ~QATZSTDCodec() {
+    if (initQatCCtx_) {
+      ZSTD_freeCCtx(zc_);
+      if (sequenceProducerState_) {
+        QZSTD_freeSeqProdState(sequenceProducerState_);
+      }
+    }
   }
 
   Result<int64_t> Decompress(int64_t input_len, const uint8_t* input,
@@ -227,38 +321,12 @@ class ZSTDCodec : public Codec {
 
   Result<int64_t> Compress(int64_t input_len, const uint8_t* input,
                            int64_t output_buffer_len, uint8_t* output_buffer) override {
-    // ZSTD_CCtx *const zc = ZSTD_createCCtx();
-    // ZSTD_registerSequenceProducer(zc, NULL, NULL);
-
-    // // QZSTD_startQatDevice();
-    // // void *sequenceProducerState = QZSTD_createSeqProdState();
-
-    // // ZSTD_registerSequenceProducer(
-    // //     zc,
-    // //     sequenceProducerState,
-    // //     qatSequenceProducer
-    // // );
-
-    // // size_t res = ZSTD_CCtx_setParameter(zc, ZSTD_c_enableSeqProducerFallback, 1);
-
-    // // rc = ZSTD_CCtx_setParameter(zc, ZSTD_c_searchForExternalRepcodes, ZSTD_ps_auto);
-
-    // // res = ZSTD_CCtx_setParameter(zc, ZSTD_c_compressionLevel, /*cLevel*/ 9);
-
     /* compress */
-    size_t cSize = ZSTD_compress2(zc, output_buffer, output_buffer_len, input, input_len);
+    size_t cSize =
+        ZSTD_compress2(zc_, output_buffer, output_buffer_len, input, input_len);
     if ((int)cSize <= 0) {
-        printf("Compress failed\n");
-        ZSTD_freeCCtx(zc);
-        QZSTD_freeSeqProdState(sequenceProducerState);
-        return static_cast<int64_t>(cSize);
+      return ZSTDError(cSize, "ZSTD compression failed: ");
     }
-
-    // size_t ret = ZSTD_compress(output_buffer, static_cast<size_t>(output_buffer_len),
-    //                            input, static_cast<size_t>(input_len), compression_level_);
-    // ZSTD_freeCCtx(zc);
-    // QZSTD_freeSeqProdState(sequenceProducerState);
-    // QZSTD_stopQatDevice();
     return static_cast<int64_t>(cSize);
   }
 
@@ -274,6 +342,33 @@ class ZSTDCodec : public Codec {
     return ptr;
   }
 
+  Status Init() override {
+    if (initQatCCtx_) {
+      return Status::OK();
+    }
+    zc_ = ZSTD_createCCtx();
+    size_t ret = ZSTD_CCtx_setParameter(zc_, ZSTD_c_compressionLevel, compression_level_);
+    if (ZSTD_isError(ret)) {
+      return ZSTDError(ret, "Fail to set parameter ZSTD_c_compressionLevel");
+    }
+
+    if (!qatDevice_) {
+      qatDevice_ = QATDevice::getInstance();
+    }
+    if (qatDevice_->deviceInitialized()) {
+      sequenceProducerState_ = QZSTD_createSeqProdState();
+      /* register qatSequenceProducer */
+      ZSTD_registerSequenceProducer(zc_, sequenceProducerState_, qatSequenceProducer);
+      /* Enable sequence producer fallback */
+      ret = ZSTD_CCtx_setParameter(zc_, ZSTD_c_enableSeqProducerFallback, 1);
+      if ((int)ret <= 0) {
+        return ZSTDError(ret, "Failed to set fallback");
+      }
+    }
+    initQatCCtx_ = true;
+    return Status::OK();
+  }
+
   Compression::type compression_type() const override { return Compression::ZSTD; }
   int minimum_compression_level() const override { return ZSTD_minCLevel(); }
   int maximum_compression_level() const override { return ZSTD_maxCLevel(); }
@@ -283,14 +378,21 @@ class ZSTDCodec : public Codec {
 
  private:
   const int compression_level_;
-  ZSTD_CCtx *const zc = ZSTD_createCCtx();
-  void *sequenceProducerState;
+  ZSTD_CCtx* zc_;
+  void* sequenceProducerState_{nullptr};
+
+  bool initQatCCtx_{false};
+  std::shared_ptr<QATDevice> qatDevice_;
 };
 
 }  // namespace
 
 std::unique_ptr<Codec> MakeZSTDCodec(int compression_level) {
+#ifdef ARROW_WITH_QAT
+  return std::make_unique<QATZSTDCodec>(compression_level);
+#else
   return std::make_unique<ZSTDCodec>(compression_level);
+#endif
 }
 
 }  // namespace internal
