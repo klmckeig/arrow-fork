@@ -855,11 +855,11 @@ else()
            "${THIRDPARTY_MIRROR_URL}/zlib-${ARROW_ZLIB_BUILD_VERSION}.tar.gz")
 endif()
 
-if(DEFINED ENV{ARROW_ZSTD_URL})
-  set(ZSTD_SOURCE_URL "$ENV{ARROW_ZSTD_URL}")
+if(DEFINED ENV{ARROW_QAT_ZSTD_URL})
+  set(QAT_ZSTD_SOURCE_URL "$ENV{ARROW_QAT_ZSTD_URL}")
 else()
-  set_urls(ZSTD_SOURCE_URL
-           "https://github.com/facebook/zstd/releases/download/v${ARROW_ZSTD_BUILD_VERSION}/zstd-${ARROW_ZSTD_BUILD_VERSION}.tar.gz"
+  set_urls(QAT_ZSTD_SOURCE_URL
+           "https://github.com/intel/QAT-ZSTD-Plugin/archive/refs/tags/${ARROW_QAT_ZSTD_BUILD_VERSION}.tar.gz"
   )
 endif()
 
@@ -2485,15 +2485,7 @@ endif()
 macro(build_zstd)
   message(STATUS "Building Zstandard from source")
 
-  set(ZSTD_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/zstd_ep-install")
-
-  set(ZSTD_CMAKE_ARGS
-      ${EP_COMMON_CMAKE_ARGS}
-      "-DCMAKE_INSTALL_PREFIX=${ZSTD_PREFIX}"
-      -DZSTD_BUILD_PROGRAMS=OFF
-      -DZSTD_BUILD_SHARED=OFF
-      -DZSTD_BUILD_STATIC=ON
-      -DZSTD_MULTITHREAD_SUPPORT=OFF)
+  set(ZSTD_PREFIX "/home/yangyang/zstd-1.5.4")
 
   if(MSVC)
     set(ZSTD_STATIC_LIB "${ZSTD_PREFIX}/lib/zstd_static.lib")
@@ -2504,17 +2496,6 @@ macro(build_zstd)
     set(ZSTD_STATIC_LIB "${ZSTD_PREFIX}/lib/libzstd.a")
   endif()
 
-  externalproject_add(zstd_ep
-                      ${EP_COMMON_OPTIONS}
-                      CMAKE_ARGS ${ZSTD_CMAKE_ARGS}
-                      SOURCE_SUBDIR "build/cmake"
-                      INSTALL_DIR ${ZSTD_PREFIX}
-                      URL ${ZSTD_SOURCE_URL}
-                      URL_HASH "SHA256=${ARROW_ZSTD_BUILD_SHA256_CHECKSUM}"
-                      BUILD_BYPRODUCTS "${ZSTD_STATIC_LIB}")
-
-  file(MAKE_DIRECTORY "${ZSTD_PREFIX}/include")
-
   add_library(zstd::libzstd_static STATIC IMPORTED)
   set_target_properties(zstd::libzstd_static PROPERTIES IMPORTED_LOCATION
                                                         "${ZSTD_STATIC_LIB}")
@@ -2523,6 +2504,9 @@ macro(build_zstd)
 
   add_dependencies(toolchain zstd_ep)
   add_dependencies(zstd::libzstd_static zstd_ep)
+  # set_target_properties(zstd::libzstd_static
+  #                       PROPERTIES IMPORTED_LOCATION "${ZSTD_STATIC_LIB}"
+  #                                  INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_PREFIX}/lib")
 
   list(APPEND ARROW_BUNDLED_STATIC_LIBS zstd::libzstd_static)
 
@@ -2537,7 +2521,7 @@ if(ARROW_WITH_ZSTD)
                      PC_PACKAGE_NAMES
                      libzstd
                      REQUIRED_VERSION
-                     1.4.0)
+                     1.5.4)
 
   if(ZSTD_VENDORED)
     set(ARROW_ZSTD_LIBZSTD zstd::libzstd_static)
@@ -2568,6 +2552,7 @@ macro(build_qat_zstd_plugin)
       -DZSTDLIB=${ARROW_QAT_ZSTD_LIBZSTD})
 
   set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/lib/libqatseqprod.a")
+  # set(QAT_ZSTD_STATIC_LIB "${QAT_ZSTD_PREFIX}/lib/libqatseqprod.a")
 
   externalproject_add(qat_zstd_ep
                       ${EP_COMMON_OPTIONS}
@@ -2593,17 +2578,32 @@ macro(build_qat_zstd_plugin)
 endmacro()
 
 if(ARROW_WITH_QAT)
-  resolve_dependency(qat_zstd_plugin
-                     REQUIRED_VERSION
-                     0.0.1)
+  # resolve_dependency(qat_zstd_plugin
+  #                    REQUIRED_VERSION
+  #                    0.0.1)
 
-  set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/lib/libqatseqprod.a")
+  set(QAT_ZSTD_STATIC_LIB "/home/yangyang/QAT-ZSTD-Plugin/src/libqatseqprod.a")
+  message("QAT_ZSTD_STATIC_LIB: ${QAT_ZSTD_STATIC_LIB}")
   add_library(qatseqprod::qatseqprod STATIC IMPORTED)
   set(QAT_ZSTD_INCLUDE_DIRS "/home/yangyang/QAT-ZSTD-Plugin/src")
   set_target_properties(qatseqprod::qatseqprod
-                        PROPERTIES INTERFACE_LINK_LIBRARIES Threads::Threads
-                                   IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB})
+                        PROPERTIES IMPORTED_LOCATION ${QAT_ZSTD_STATIC_LIB}
+                                   INTERFACE_INCLUDE_DIRECTORIES ${QAT_ZSTD_INCLUDE_DIRS})
+
+  add_library(qat::qat SHARED IMPORTED)
+  set(QAT_LIB "/usr/local/lib/libqat_s.so")
+  set_target_properties(qat::qat
+                        PROPERTIES IMPORTED_LOCATION ${QAT_LIB})
+  add_library(qat::usdm SHARED IMPORTED)
+  set(USDM_LIB "/usr/local/lib/libusdm_drv_s.so")
+  set_target_properties(qat::usdm
+                        PROPERTIES IMPORTED_LOCATION ${USDM_LIB})
   set(ARROW_QAT_ZSTD_LIBZSTD qatseqprod::qatseqprod)
+  list(APPEND ARROW_QAT_ZSTD_LIBZSTD qat::qat)
+  list(APPEND ARROW_QAT_ZSTD_LIBZSTD qat::usdm)
+  message(${ARROW_QAT_ZSTD_LIBZSTD})
+
+  # cmake_print_variables(QAT_ZSTD_PREFIX)
 endif()
 # ----------------------------------------------------------------------
 # RE2 (required for Gandiva)
