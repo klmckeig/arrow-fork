@@ -333,16 +333,14 @@ if(ARROW_WITH_ZSTD)
   list(APPEND ARROW_SRCS util/compression_zstd.cc)
 endif()
 
-<<<<<<< HEAD
 set(ARROW_TESTING_SHARED_LINK_LIBS arrow::flatbuffers rapidjson::rapidjson arrow_shared
                                    ${ARROW_GTEST_GTEST})
 set(ARROW_TESTING_STATIC_LINK_LIBS arrow::flatbuffers rapidjson::rapidjson arrow_static
                                    ${ARROW_GTEST_GTEST})
-=======
-if(ARROW_WITH_QAT)
+
+                                   if(ARROW_WITH_QAT)
   add_definitions(-DARROW_WITH_QAT)
 endif()
->>>>>>> 540687252 (refactor cmake file and qat device compression)
 
 set(ARROW_TESTING_SRCS
     io/test_common.cc
