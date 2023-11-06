@@ -76,7 +76,8 @@ set(ARROW_THIRDPARTY_DEPENDENCIES
     utf8proc
     xsimd
     ZLIB
-    zstd)
+    zstd
+    qatzstd)
 
 # For backward compatibility. We use "BOOST_SOURCE" if "Boost_SOURCE"
 # isn't specified and "BOOST_SOURCE" is specified.
@@ -225,6 +226,8 @@ macro(build_dependency DEPENDENCY_NAME)
     build_zlib()
   elseif("${DEPENDENCY_NAME}" STREQUAL "zstd")
     build_zstd()
+  elseif("${DEPENDENCY_NAME}" STREQUAL "qatzstd")
+    build_qat_zstd_plugin()
   else()
     message(FATAL_ERROR "Unknown thirdparty dependency to build: ${DEPENDENCY_NAME}")
   endif()
@@ -851,14 +854,6 @@ else()
   set_urls(ZLIB_SOURCE_URL
            "https://zlib.net/fossils/zlib-${ARROW_ZLIB_BUILD_VERSION}.tar.gz"
            "${THIRDPARTY_MIRROR_URL}/zlib-${ARROW_ZLIB_BUILD_VERSION}.tar.gz")
-endif()
-
-if(DEFINED ENV{ARROW_ZSTD_URL})
-  set(ZSTD_SOURCE_URL "$ENV{ARROW_ZSTD_URL}")
-else()
-  set_urls(ZSTD_SOURCE_URL
-           "https://github.com/facebook/zstd/releases/download/v${ARROW_ZSTD_BUILD_VERSION}/zstd-${ARROW_ZSTD_BUILD_VERSION}.tar.gz"
-  )
 endif()
 
 # ----------------------------------------------------------------------
@@ -2514,6 +2509,7 @@ macro(build_zstd)
   file(MAKE_DIRECTORY "${ZSTD_PREFIX}/include")
 
   add_library(zstd::libzstd_static STATIC IMPORTED)
+
   set_target_properties(zstd::libzstd_static PROPERTIES IMPORTED_LOCATION
                                                         "${ZSTD_STATIC_LIB}")
   target_include_directories(zstd::libzstd_static BEFORE
@@ -2521,6 +2517,17 @@ macro(build_zstd)
 
   add_dependencies(toolchain zstd_ep)
   add_dependencies(zstd::libzstd_static zstd_ep)
+  # set_target_properties(zstd::libzstd_static
+  #                       PROPERTIES IMPORTED_LOCATION "${ZSTD_STATIC_LIB}"
+  #                                  INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_PREFIX}/lib")
+
+  set_target_properties(zstd::libzstd_static
+                        PROPERTIES IMPORTED_LOCATION "${ZSTD_STATIC_LIB}"
+                                   INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_PREFIX}/include")
+
+  add_dependencies(toolchain zstd_ep)
+  add_dependencies(zstd::libzstd_static zstd_ep)
+>>>>>>> 540687252 (refactor cmake file and qat device compression)
 
   list(APPEND ARROW_BUNDLED_STATIC_LIBS zstd::libzstd_static)
 
@@ -2535,7 +2542,7 @@ if(ARROW_WITH_ZSTD)
                      PC_PACKAGE_NAMES
                      libzstd
                      REQUIRED_VERSION
-                     1.4.0)
+                     1.5.4)
 
   if(ZSTD_VENDORED)
     set(ARROW_ZSTD_LIBZSTD zstd::libzstd_static)
@@ -2552,6 +2559,70 @@ if(ARROW_WITH_ZSTD)
   endif()
 endif()
 
+macro(build_qat_zstd_plugin)
+  if(NOT TARGET ${ARROW_ZSTD_LIBZSTD})
+    find_package(zstdAlt REQUIRED)
+  endif()
+
+  message(STATUS "Building QAT ZSTD Plugin from source")
+  find_program(MAKE_PROGRAM make REQUIRED)
+  set(QATZSTD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/qatzstd-src")
+  set(QATZSTD_INCLUDE_DIR "${QATZSTD_SOURCE_DIR}/src")
+  set(QATZSTD_STATIC_LIB_TARGETS "${QATZSTD_SOURCE_DIR}/src/libqatseqprod.a")
+  set(QATZSTD_MAKE_ARGS "ENABLE_USDM_DRV=1" "ZSTDLIB=${ZSTD_INCLUDE_DIR}"
+                        "DEBUGLEVEL=1")
+
+  set(QATZSTD_SOURCE_URL
+      "https://github.com/intel-collab/applications.qat.shims.zstandard.qatzstdplugin.git"
+  )
+  set(QATZSTD_SOURCE_BRANCH "main")
+  set(QATZSTD_BASE_COMMIT "118cc226e8e8b539a5b349f5876fc21d8e4d1c1a")
+
+  externalproject_add(
+    qatzstd
+    # URL ${ARROW_QATZSTD_SOURCE_URL} URL_HASH
+    # ${ARROW_QATZSTD_BUILD_SHA256_CHECKSUM}
+    GIT_REPOSITORY ${QATZSTD_SOURCE_URL}
+    GIT_TAG ${QATZSTD_BASE_COMMIT}
+    USES_TERMINAL_DOWNLOAD ON
+    SOURCE_DIR ${QATZSTD_SOURCE_DIR}
+    BINARY_DIR ${QATZSTD_BINARY_DIR}
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ${MAKE_PROGRAM} ${QATZSTD_MAKE_ARGS}
+    INSTALL_COMMAND ""
+    BUILD_BYPRODUCTS ${QATZSTD_STATIC_LIB_TARGETS}
+    BUILD_IN_SOURCE 1)
+
+  add_library(qatzstd::qatzstd STATIC IMPORTED)
+
+  file(MAKE_DIRECTORY "${QATZSTD_INCLUDE_DIR}")
+
+  find_library(
+    USDM_DRV_LIBRARY REQUIRED
+    NAMES usdm_drv_s
+    PATHS "$ENV{ICP_ROOT}/build"
+    NO_DEFAULT_PATH)
+  find_library(
+    QAT_S_LIBRARY REQUIRED
+    NAMES qat_s
+    PATHS "$ENV{ICP_ROOT}/build"
+    NO_DEFAULT_PATH)
+
+  message(STATUS "Found usdm_drv: ${USDM_DRV_LIBRARY}")
+  message(STATUS "Found qat_s: ${QAT_S_LIBRARY}")
+
+  set_target_properties(qatzstd::qatzstd PROPERTIES IMPORTED_LOCATION
+                                                    ${QATZSTD_STATIC_LIB_TARGETS})
+  target_include_directories(qatzstd::qatzstd INTERFACE ${QATZSTD_INCLUDE_DIR})
+  target_link_libraries(qatzstd::qatzstd INTERFACE ${ARROW_ZSTD_LIBZSTD} ${USDM_DRV_LIBRARY}
+                                                  ${QAT_S_LIBRARY})
+
+  add_dependencies(qatzstd::qatzstd qatzstd)
+endmacro()
+
+if(ARROW_WITH_QAT)
+  resolve_dependency(qatzstd)
+endif()
 # ----------------------------------------------------------------------
 # RE2 (required for Gandiva)
 

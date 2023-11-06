@@ -338,6 +338,10 @@ set(ARROW_TESTING_SHARED_LINK_LIBS arrow::flatbuffers rapidjson::rapidjson arrow
 set(ARROW_TESTING_STATIC_LINK_LIBS arrow::flatbuffers rapidjson::rapidjson arrow_static
                                    ${ARROW_GTEST_GTEST})
 
+                                   if(ARROW_WITH_QAT)
+  add_definitions(-DARROW_WITH_QAT)
+endif()
+
 set(ARROW_TESTING_SRCS
     io/test_common.cc
     ipc/test_common.cc
@@ -664,6 +668,7 @@ add_arrow_lib(arrow
               ${ARROW_SHARED_PRIVATE_LINK_LIBS}
               STATIC_LINK_LIBS
               ${ARROW_STATIC_LINK_LIBS}
+              ${GFLAGS_LIBRARIES}
               STATIC_INSTALL_INTERFACE_LIBS
               ${ARROW_STATIC_INSTALL_INTERFACE_LIBS}
               SHARED_INSTALL_INTERFACE_LIBS

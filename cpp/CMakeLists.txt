@@ -769,6 +769,13 @@ if(ARROW_WITH_ZSTD)
   endif()
 endif()
 
+if(ARROW_WITH_QAT)
+  list(APPEND ARROW_STATIC_LINK_LIBS qatzstd::qatzstd)
+  if(qat_zstd_plugin_SOURCE STREQUAL "SYSTEM")
+    list(APPEND ARROW_STATIC_INSTALL_INTERFACE_LIBS qatzstd::qatzstd)
+  endif()
+endif()
+
 if(ARROW_ORC)
   list(APPEND ARROW_SHARED_LINK_LIBS orc::orc ${ARROW_PROTOBUF_LIBPROTOBUF})
   list(APPEND ARROW_STATIC_LINK_LIBS orc::orc ${ARROW_PROTOBUF_LIBPROTOBUF})
